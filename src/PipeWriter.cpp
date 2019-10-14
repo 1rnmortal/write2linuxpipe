@@ -1,23 +1,28 @@
 #include "PipeWriter.hpp"
-#include <iostream>
 #include <cstdlib>
 #include <vector>
 #include <cstring>
- bool PipeWriter::SendMsg(char* msg)
+bool PipeWriter::SendMsg(std::string msg)
 {
-    auto list = split(msg,";");
+
+	if (nullptr == sendList)
+	{
+        std::cout<<"queue ptr is nullptr:"<<std::endl;
+        return false;
+    }
+    auto list = split(msg.data(),";");
     for (auto item : list)
     {
         LogMsg temp;
-        temp.size = strlen(item.data())+1;
+        temp.size = item.size();
         if (temp.size >= BUF_SIZE)
         {
-            std::cout<<"Glog error:msg is  too long:"<<temp.size<<std::endl;
-	        std::cout<<"content"<<item.data()<<std::endl;
+            std::cout<<"Glog error:msg is  too long:"<<temp.size<<" ";
+            std::cout<<"content"<<item.data()<<std::endl;
             return false;
         }
-        strncpy(temp.content,item.data(),temp.size);
-        sendList.push(temp);
+        temp.content = item;
+        sendList->push(temp);
     }
     return true;
 }
@@ -48,18 +53,24 @@ void PipeWriter::WriteLoop()
 {
     while(1)
     {
-        while(!sendList.empty())
+        if (nullptr == sendList)
         {
-            LogMsg msg = sendList.front();
-            int size = write(fd,msg.content,msg.size);
+            std::cout<<"queue ptr is nullptr:"<<std::endl;
+            return;
+        }
+        while(sendList->size() != 0 )
+        {
+            LogMsg msg;
+            if(!sendList->pop( msg))
+                continue;
+            int size = write(fd,msg.content.data(),msg.size);
             if (size <= 0)
             {
                 std::cout<<"Glog error:wiret into pipe failed"<<std::endl;
                 std::cout<<"content:"<<msg.content<<std::endl;
             }
-            sendList.pop();
         }
-       usleep(50*1000);
+        usleep(50*1000);
     }
 }
 

@@ -1,27 +1,19 @@
 #include "PipeWrapper.hpp"
 #include <cstdio>
+#include <string>
+#include <iostream>
 namespace PipeLibWrapper
 {
-    PipeWriter* pObj = new PipeWriter();
+    PipeWriter pObj ;
     bool  writeIntoPipe(char* msg)
     {
-        if (NULL != pObj)
-            return pObj->SendMsg(msg);
-        return false;
+        std::string str = msg;
+        return pObj.SendMsg(str);
     }
     bool  initPipe(char* path)
     {
         std::cout<< "Glog path" << path<<std::endl;
-        if (NULL != pObj)
-        {
-            return pObj->init(path);
-        }
-        else
-        {
-            printf("obj is null ");
-
-        }
-        return false;
+        return pObj.init(path);
     }
 
 }

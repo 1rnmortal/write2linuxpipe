@@ -9,11 +9,21 @@
 #include<stdio.h>
 #include<queue>
 #include<thread>
+#include "lockFreeQueue.h"
 #define BUF_SIZE 512
 struct LogMsg
 {
-    char content[BUF_SIZE];
+    LogMsg()
+    {
+        clear();
+    }
+    std::string content;
     int size;
+    void clear()
+    {
+        content.clear();
+        size = 0;
+    }
 };
 class PipeWriter
 {
@@ -21,9 +31,17 @@ class PipeWriter
         char* _path;
         void WriteLoop();
         int fd ;
-        std::queue<LogMsg> sendList;
+        LockFreeQueueCpp11<LogMsg>* sendList;
     public:
-        bool SendMsg(char* msg);
+        PipeWriter()
+        {
+            sendList = new LockFreeQueueCpp11<LogMsg>(16);
+        }
+        ~PipeWriter()
+        {
+            delete sendList;
+        }
+        bool SendMsg(std::string msg);
         bool init(char* path) ;
 };
 std::vector<std::string> split(const char *s, const char *delim);
