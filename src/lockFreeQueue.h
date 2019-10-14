@@ -1,100 +1,96 @@
-/*======================================================
-    > File Name: lockFreeQueue.h
-    > Author: MiaoShuai
-    > E-mail:  
-    > Other :  
-    > Created Time: 2016年03月27日 星期日 10时29分56秒
- =======================================================*/
+
 #pragma once
 
 #include <atomic>
-#include <string>
-#include <iostream>
-#include <list>
-#include <stdio.h>
+#include <cstddef>
 
-template <typename T>
-class LinkList
+template <typename T> class LockFreeQueueCpp11
 {
-    public:
-        T data;
-        LinkList<T> *next;
-};
+public:
+  explicit LockFreeQueueCpp11(size_t capacity)
+  {
+    _capacityMask = capacity - 1;
+    for(size_t i = 1; i <= sizeof(void*) * 4; i <<= 1)
+      _capacityMask |= _capacityMask >> i;
+    _capacity = _capacityMask + 1;
 
-template <typename T>
-class LockFreeQueue
-{
-    public:
-        LockFreeQueue();
-        //入队
-        void push_back(T t);
-        //出队
-        T pop_front(void);
-        //判队空
-        bool isEmpty(void);
-    private:
-        LinkList<T> *head_;
-        LinkList<T> *tail_;
-        std::atomic_int elementNumbers_;       
-};
-
-template <typename T>
-LockFreeQueue<T>::LockFreeQueue()
-    :head_(NULL),
-    tail_(new LinkList<T>),
-    elementNumbers_(0)
-{
-    head_ = tail_;
-    tail_->next = NULL;     
-}
-
-template <typename T>
-void LockFreeQueue<T>::push_back(T t)
-{
-    auto newVal = new LinkList<T>;
-    newVal->data = t;
-    newVal->next = NULL;
-
-    LinkList<T> *p;
-    do
+    _queue = (Node*)new char[sizeof(Node) * _capacity];
+    for(size_t i = 0; i < _capacity; ++i)
     {
-        //此操作暂时可删除，之后会跟新
-        p = tail_;
-    }while(!__sync_bool_compare_and_swap(&tail_->next,NULL,newVal));
-
-    //移动tail_
-    __sync_bool_compare_and_swap(&tail_,tail_,newVal);
-    elementNumbers_++;
-}
-
-template <typename T>
-T LockFreeQueue<T>::pop_front()
-{
-    LinkList<T> *p;
-    
-    do
-    {
-        //获取第一个节点快照
-        p = head_->next;
-        if(!p)
-        {
-            return 0;    
-        }
-    }while(!__sync_bool_compare_and_swap(&head_->next,p,p->next));
-    elementNumbers_--;
-    return p->data;   
-}
-
-template <typename T>
-bool LockFreeQueue<T>::isEmpty()
-{
-    if(elementNumbers_ == 0)
-    {
-        return true;
+      _queue[i].tail.store(i, std::memory_order_relaxed);
+      _queue[i].head.store(-1, std::memory_order_relaxed);
     }
-    else
+
+    _tail.store(0, std::memory_order_relaxed);
+    _head.store(0, std::memory_order_relaxed);
+  }
+
+  ~LockFreeQueueCpp11()
+  {
+    for(size_t i = _head; i != _tail; ++i)
+      (&_queue[i & _capacityMask].data)->~T();
+
+    delete [] (char*)_queue;
+  }
+  
+  size_t capacity() const {return _capacity;}
+  
+  size_t size() const
+  {
+    size_t head = _head.load(std::memory_order_acquire);
+    return _tail.load(std::memory_order_relaxed) - head;
+  }
+  
+  bool push(const T& data)
+  {
+    Node* node;
+    size_t tail = _tail.load(std::memory_order_relaxed);
+    for(;;)
     {
+      node = &_queue[tail & _capacityMask];
+      if(node->tail.load(std::memory_order_relaxed) != tail)
         return false;
+      if((_tail.compare_exchange_weak(tail, tail + 1, std::memory_order_relaxed)))
+        break;
     }
-}
+    new (&node->data)T(data);
+    node->head.store(tail, std::memory_order_release);
+    return true;
+  }
 
+  bool pop(T& result)
+  {
+    Node* node;
+    size_t head = _head.load(std::memory_order_relaxed);
+    for(;;)
+    {
+      node = &_queue[head & _capacityMask];
+      if(node->head.load(std::memory_order_relaxed) != head)
+        return false;
+      if(_head.compare_exchange_weak(head, head + 1, std::memory_order_relaxed))
+        break;
+    }
+    result = node->data;
+    (&node->data)->~T();
+    node->tail.store(head + _capacity, std::memory_order_release);
+    return true;
+  }
+
+private:
+  struct Node
+  {
+    T data;
+    std::atomic<size_t> tail;
+    std::atomic<size_t> head;
+  };
+
+private:
+  size_t _capacityMask;
+  Node* _queue;
+  size_t _capacity;
+  char cacheLinePad1[64];
+  std::atomic<size_t> _tail;
+  char cacheLinePad2[64];
+  std::atomic<size_t> _head;
+  char cacheLinePad3[64];
+};
